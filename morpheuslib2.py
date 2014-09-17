@@ -47,10 +47,10 @@ def read_dict(file):
     f.close()
     d = {}
     for ln in lns:
-            
+
         l, p = ln.split()
         d[l] = p
-    
+
     return d
 
 def read_list(file):
@@ -104,7 +104,7 @@ def num_sfx(s):
     i = len(s) - 1
     while i >= 0 and s[i].isdigit():
         i = i - 1
-    
+
     return (s[:i + 1], s[i + 1:])
 
 
@@ -121,7 +121,7 @@ def separated_features(*features, separator = ',', delimiter = ''):
         default is the empty string.
     Returns:
         str.
-        
+
     """
     return separator.join(['{0}{1}{2}'.format(delimiter, feature, delimiter) for feature in features])
 
@@ -144,11 +144,11 @@ def prologize(s):
             return s.center(len(s) + 2 , "'") 
         else:
             return s
-        
-            
+
+
 def url_form(word, lang, greek_mode):
     """A version of the word argument for use in a Morpheus url.
-    
+
     Args:
         word: str
         lang: 'la' or 'greek'
@@ -167,43 +167,46 @@ def url_form(word, lang, greek_mode):
             raise LangError("Invalid greek_mode " + greek_mode)
     else:
         raise LangError("Invalid lang " + lang)
-    
+
 RetryReport = collections.namedtuple('RetryReport', ['tries', 'resps', 'ok'])
 
 
 def retry_all(urls, max_tries, cache = None):
-        """Try to fetch analyses from a list of urls within a number of tries.
-        Args:
-            urls: list of MorpheusUrls
-            max_tries: how many times to try fetching all the urls (int)
-            cache: either Cache or DbCache (optional, default: None).
-        Returns:
-            a triple consisting of: the number of tries made, a list of 
-            MorpheusResponses, a bool indicating whether the operation succeeded
-            in getting all the analyses.
-        """
-        d = 0
-       
-        
-        
-        while d < max_tries:
-            if d == 0:
-                l = [url.fetch(cache) for url in urls]
-                
-            else:
-                l = [resp.retry(cache) for resp in l]
-            d = d + 1
-            if all([resp.is_ok() for resp in l]):
-                return RetryReport(d, l, True)
-            else:
-                pass
-                
-                
-        return RetryReport(d, l, False)
+    """Try to fetch analyses from a list of urls within a number of tries.
+    Args:
+        urls: list of MorpheusUrls
+        max_tries: how many times to try fetching all the urls (int)
+        cache: either Cache or DbCache (optional, default: None).
+    Returns:
+        a triple consisting of: the number of tries made, a list of 
+        MorpheusResponses, a bool indicating whether the operation succeeded
+        in getting all the analyses.
+    """
+    d = 0
+
+
+
+    while d < max_tries:
+        if d == 0:
+            l = [url.fetch(cache) for url in urls]
+
+        else:
+            l = [resp.retry(cache) for resp in l]
+        d = d + 1
+        if all([resp.is_ok() for resp in l]):
+            return RetryReport(d, l, True)
+        else:
+            pass
+
+
+    return RetryReport(d, l, False)
+
+def finalize_sigma(c):
+    return c in ' \n.,;:\u00B7‘’'
 
 class LangError(ValueError):
     """An exception for unrecognized language options.
-   
+
     """
     pass
 
@@ -252,8 +255,8 @@ class Latin(object):
 
         In case you are wondering, this method exists because Morpheus omits 
         person information from Latin pronouns (though not from Greek ones).
-        
-        
+
+
 
         Args:
             lemma:  the dictionary lemma, e.g. 'is' for 'ea' (str).
@@ -263,7 +266,7 @@ class Latin(object):
             KeyError, if the pronoun isn't in the dict.
             IOError, if the prons.la file can't be read.
         """    
-        
+
         return cls.get_prons()[lemma]
 
     @classmethod
@@ -317,7 +320,22 @@ class BetaCode(object):
     beta = beta_ll + beta_lu + beta_diac
     uc_shift = '*'
     trans = None
-
+    beta_alpha_lc = 'abgdezhqiklmncoprstufxywv'
+    beta_alpha_uc = ''.join(['*' + c for c in beta_alpha_lc])
+    
+    @classmethod
+    def beta_alpha(cls, case, mode):
+        if case == 'lower':
+            a = cls.beta_alpha_lc
+        elif case == 'upper':
+            a = cls.beta_alpha_uc
+        else:
+            a = ""
+        if mode == 'upper':
+            return a.upper()
+        else:
+            return a
+        
     @classmethod
     def get_trans(cls):
         """Get the BetaCode character-> Unicode Greek character translator.
@@ -327,7 +345,7 @@ class BetaCode(object):
             sets the trans class attribute lazily.
         """
         if cls.trans is None:
-            
+
             cls.make_trans()
         else:
             pass
@@ -339,7 +357,7 @@ class BetaCode(object):
         Effect:
             sets the trans class attribute.
         """
-        cls.trans = str.maketrans(cls.beta, UniGreek.greek)
+        cls.trans = str.maketrans(cls.beta, UniGreek.greek_targets)
 
     @classmethod
     def is_letter(cls, c):
@@ -348,8 +366,24 @@ class BetaCode(object):
             bool.
         """
         return c in (cls.beta + cls.uc_shift)
-        
     
+    @classmethod
+    def test(cls, text, mode, lunate = False):
+        """Run a test on the argument text by converting to Unicode Greek, then
+        back to BetaCode.
+        
+        Args:
+            text: the Beta Code text (str)
+            mode: BetaCode mode ('upper', 'lower', or 'preserve')
+            lunate: whether to use lunate sigma (optional, default is False).
+        Raises:
+            AssertionError if equality test fails.
+        """
+        
+        greek = cls.to_unigreek(text, lunate)
+        beta = UniGreek.to_betacode(greek, mode)
+        assert text == beta
+        
     @classmethod
     def to_unigreek(cls, s, lunate = False):
         """Convert BetaCode to Unicode Greek. Output is in non-composed 
@@ -360,26 +394,27 @@ class BetaCode(object):
         Returns:
             str.
         """
-        
-        
+
+
         buf = io.StringIO(' ' * len(s))
         i = 0
         while i < len(s):
             if s[i] == '*':
-                print("help")
+                # print("help")
                 i = cls.conv_uc(s, i, buf, lunate)
             elif s[i].isalpha():
                 i = cls.conv_lc(s, i, buf, lunate)
             else:
                 i = cls.conv_diac(s, i, buf)
-        o = buf.getvalue().rstrip()
+        o = buf.getvalue().rstrip(' ')
         buf.close()
-        
-        if o[-1] == UniGreek.sigma:
-            return o[:-1] + UniGreek.final_sigma
-        else: 
-            return o
-
+        # Handling of word-final or text final small sigma is now done in
+        # conv_lc().
+        #if o[-1] == UniGreek.sigma:
+            #return o[:-1] + UniGreek.final_sigma
+        #else: 
+            #return o
+        return o
     @classmethod
     def conv_uc(cls, s, i, buf, lunate):
         """Helper method for to_unigreek(). Performs conversion of uppercase
@@ -396,7 +431,7 @@ class BetaCode(object):
         b = io.StringIO('  ')
         i = i + 1
         c = s[i]
-        
+
         while not c.isalpha():
             b.write(c)
             i = i + 1
@@ -427,14 +462,22 @@ class BetaCode(object):
         Returns:
             index of next character to convert.
         """
-        
+
+        #if s[i] == 'S':
+            #if lunate:
+                #buf.write(UniGreek.lunate_sigma)
+            #else:
+                #buf.write(UniGreek.sigma)
         if s[i] == 's' or s[i] == 'S':
             if lunate:
                 buf.write(UniGreek.lunate_sigma)
             else:
-                buf.write(UniGreek.sigma)
+                if i == len(s) - 1 or finalize_sigma(s[i + 1]): #not s[i + 1].isalpha():
+                    buf.write(UniGreek.final_sigma)
+                else:
+                    buf.write(UniGreek.sigma)
         else:
-            print(s[i] + s[i].translate(cls.get_trans()))
+            # print(s[i] + s[i].translate(cls.get_trans()))
             buf.write(s[i].translate(cls.get_trans()))
         return i + 1
 
@@ -450,7 +493,7 @@ class BetaCode(object):
         """
         buf.write(s[i].translate(cls.get_trans()))
         return i + 1
-    
+
     @staticmethod
     def cleanse(s):
         """Remove diacritics from the word for use in a url.
@@ -463,7 +506,7 @@ class BetaCode(object):
     @staticmethod
     def fix_grave(word):
         """Return word with a grave accent changed to acute.
-        
+
         Dictionary forms always have an acute accent.
         Arg:
            Greek word in Beta Code (str).
@@ -471,7 +514,7 @@ class BetaCode(object):
            the word with grave changed to acute (\ -> /).
         """
         return word.replace('\\', '/')
-    
+
     @staticmethod
     def fix_2nd_acute(word):
         """Return word (string) without a second acute induced by an enclitic
@@ -486,23 +529,24 @@ class BetaCode(object):
             i = word.rfind('/')
             return word[:i] + word[(i + 1):]
         else:
-            
+
             return word
-            
+
 class UniGreek(object):
     """Holds methods for handling Greek text in Unicode."""
     greek_ll = ((''.join([chr(i) for i in range(0x3B1, 0x03CA)]))
-                        + chr(0x03DD) + chr(0x03F2))
+                + chr(0x03DD) + chr(0x03F2))
 
     # Note that coronis is treated here as a diacritic.
     greek_diac = (chr(0x0301) + chr(0x0300) + chr(0x0314) +chr(0x0313)
-                          + chr(0x0342) + chr(0x0308) + chr(0x0345)
-                          + chr(0x1fbd))
+                  + chr(0x0342) + chr(0x0308) + chr(0x0345)
+                  + chr(0x1fbd))
 
     greek_lu = greek_ll.upper()
 
     greek = greek_ll + greek_lu + greek_diac
-
+    greek_targets = greek_ll + greek_ll + greek_diac
+    
     final_sigma = chr(0x03C2)
     sigma = chr(0x03C3)
     lunate_sigma = chr(0x03F2)
@@ -535,10 +579,30 @@ class UniGreek(object):
             return unicodedata.name(c).find('GREEK') >= 0
         else:
             return False
-
+        
+    @staticmethod
+    def is_word_final(s, i):
+        return i == len(s) or not s[i + 1].isalpha()
+    
+    @classmethod
+    def test(cls, text, mode):
+        """Run a conversion test on argument text by converting it to Beta Code
+        then back to Unicode Greek.
+        
+        Args:
+            text: the Unicode Greek text (str)
+            mode: the BetaCode mode to use ('upper', 'lower', or 'preserve).
+        Raises:
+            AssertionError if equality test fails.
+        """
+        
+        beta = cls.to_betacode(text, mode)
+        greek = UniGreek.to_betacode(greek, mode)
+        assert greek == text
+        
     @classmethod
     def to_betacode(cls, s, mode):
-        
+
         """Translate a Unicode Greek string to BetaCode.
         Args:
             s: the string to translate
@@ -549,7 +613,7 @@ class UniGreek(object):
         Returns:
             str.
         """
-        
+
         t = unicodedata.normalize('NFD', s)
         buf = io.StringIO(' ' * len(t))
         i = 0
@@ -560,8 +624,8 @@ class UniGreek(object):
                 i = cls.conv_lc(t, i, buf, mode)
             else:
                 i = cls.conv_diac(t, i, buf)
- 
-        o = buf.getvalue().rstrip()
+
+        o = buf.getvalue().rstrip(' ')
         buf.close()
         return o
 
@@ -572,7 +636,7 @@ class UniGreek(object):
         c = t[i]
         buf.write('*')
         i = i + 1
-        while not t[i].isalpha():
+        while i < len(t) and not t[i].isalpha():
             buf.write(t[i].translate(cls.get_trans()))
             i = i + 1
         if mode == 'upper':
@@ -595,7 +659,7 @@ class UniGreek(object):
             buf.write(t[i].translate(cls.get_trans()).lower())
         elif mode == 'preserve':
             buf.write(t[i].translate(cls.get_trans()))
-        
+
         return i + 1
 
     @classmethod
@@ -623,7 +687,7 @@ class UniGreek(object):
         r = unicodedata.normalize('NFC', b.getvalue())
         b.close()
         return r
- 
+
     @staticmethod
     def fix_2nd_acute(word):
         """Delete a secondary acute accent.
@@ -640,11 +704,11 @@ class UniGreek(object):
             return unicodedata.normalize('NFC', r)
         else:
             return word
-    
-             
+
+
 class WordStream(object):
     """A stream of words from a text file or string. 
-        
+
     The stream keeps track of some structure, namely the word ordinal and 
     the ordinals of the clause and sentence it belongs to. 
 
@@ -669,7 +733,7 @@ class WordStream(object):
         if lang == 'la', greek_mode is ignored
         if lang == 'greek', greek_mode must be 'unicode' or 'betacode'
         if mixed == True, greek_mode must be 'unicode'. 
-        
+
     """
     def __init__(self, label, text, lang, greek_mode = None, mixed = False):
         self.label = label
@@ -704,7 +768,7 @@ class WordStream(object):
                 self.terms = ".;" 
                 self.abbr_term = ""
                 self.abbrs = []
-            
+
             else:
                 raise LangError("Invalid greek_mode argument " + greek_mode)
         else:
@@ -741,7 +805,7 @@ class WordStream(object):
             elif c in self.terms + self.seps:
                 self.acc.write(c)
                 return self.conv_acc()
-                
+
             else:               
                 if is_letter(c, self.lang, self.greek_mode, self.mixed):
                     self.acc.write(c)
@@ -773,7 +837,7 @@ class WordStream(object):
         """
         f = io.StringIO(text)
         return cls(label, f, lang, greek_mode, mixed)
-        
+
     @classmethod
     def from_file(cls, label, file, lang, greek_mode = None, mixed = False):
         """Construct a WordStream instance from a file.
@@ -819,7 +883,7 @@ class WordStream(object):
             if b1:
                 return 'la'
             b2 = all([UniGreek.is_letter(c) for c in s])
-            
+
             if b2:
                 return 'greek'
             raise LangError("Undetermined lang for mixed lang string " + s)
@@ -838,11 +902,11 @@ class WordStream(object):
         s = self.acc.getvalue().rstrip()
         self.acc = io.StringIO(' ' * 20)
         self.acc_ct = 0
-        
-        
+
+
         t = s[-1]
         u = s.rstrip(self.seps + self.terms)
-        
+
         a = Word(self.label, u, self.det_lang(u), self.greek_mode, self.i, self.c, self.s)
         if t in self.seps + self.terms:
             a.term = t   
@@ -855,7 +919,7 @@ class WordStream(object):
 
 class Word(object):
     """One word, with its label, language and position information.
-    
+
     Attributes:
         label: the scope of the text, e.g. 'Hom. Od. i'.
         word: the string
@@ -865,7 +929,7 @@ class Word(object):
         w: word ordinal (int, zero-based)
         c: clause ordinal (int, zero-based)
         s: sentence ordinal (int, zero-based)
-        
+
     """
     features = ['label', 'word', 'w', 'c', 's']
 
@@ -885,21 +949,21 @@ class Word(object):
         self.word = word
         self.lang = lang
         self.term = None
-        
+
         self.greek_mode = greek_mode
         self.w = w
         self.c = c
         self.s = s
-        
+
     def same_w(self, other):
         """Are two words positionally the same?
-        
+
         w is a text-scope ordinal, and so is sufficient to indicate positional sameness.
         Returns:
             bool.
         """
         return self.label == other.label and self.w == other.w
-        
+
     def url_str(self):
         """The form of this Word suitable for submission to Morpheus in a url.
         Returns:
@@ -916,18 +980,18 @@ class Word(object):
 
     def prolog(self):
         """A Prolog term for this word.
-        
+
         Returns:
             str.    
         """
-        
+
 
         return 'word(' + ','.join([prologize(self.word), 
                                    prologize(self.label), str(self.w),
                                    str(self.c), str(self.s)]) + ')'
     def headword_str(self):
         """Return the dictionary headword form of this word.
-        
+
         This is important for Greek words only. It fixes accents to agree with 
         dictionary form (at most one acute or circumflex. no grave).
         """
@@ -944,16 +1008,47 @@ class Word(object):
                 fg = lambda x: x
                 f2a = fg
             return f2a(fg(self.word))                      
-            
+
     def make_url(self):
         """ Convenience method to create a url for Morpheus service.
         Returns:
             MorpheusUrl instance.
         """
         return MorpheusUrl(self)
-    
-    
-    
+
+    def neighbor(self, part, other):
+        """Is the word other in the same part of the text as self (but not the
+           same word)?
+        Args:
+            part: 'c' (clause) or 's' (sentence);
+            other: instance of Word.
+        Returns:
+            bool.
+        Raises:
+
+
+        """
+        if self.label != other.label or self.w == other.w:
+            return False
+        else:
+            return getattr(self, part) == getattr(other, part)
+
+    def near(self, part, other, dist):
+        def sign(u):
+            if u == 0:
+                return 0
+            else:
+                return u // abs(u)
+        p1 = getattr(self, part)
+        p2 = getattr(other, part)
+        d = p1 - p2
+        if abs(d) > abs(dist):
+            return False
+        else:
+            return sign(d) == sign(dist)
+        
+        
+
     @classmethod
     def from_str(cls, word, lang, greek_mode = None):
         """ A covenience method to construct a Word without a textual 
@@ -968,7 +1063,7 @@ class Word(object):
         """    
         return cls(None, word, lang, greek_mode, 0, 0, 0)
 
-    
+
 
 class MorpheusUrl(object):
     """ A word's Morpheus service URL.
@@ -989,12 +1084,12 @@ class MorpheusUrl(object):
         self.key = (url_form(word.word, word.lang, word.greek_mode), word.lang)
         self.url = (MorpheusUrl.base + "xmlmorph?lang=" + word.lang + "&lookup=" 
                     + url_form(word.word, word.lang, word.greek_mode))
-        
+
 
     def __str__(self):
         return 'morpheuslib2.MorpheusUrl ' + self.url
-    
-    
+
+
 
     def fetch(self, cache = None):
         """Fetch the <analyses> XML document.
@@ -1008,7 +1103,7 @@ class MorpheusUrl(object):
             urllib.error.HTTPError
             urllib.error.URLError
         """
-        
+
         if cache is None:
             t = None
             try:
@@ -1023,18 +1118,18 @@ class MorpheusUrl(object):
                 # This error typically indicates a connection problem. Best to
                 # report it at once.
                 raise ex1
-            
-            
+
+
         else:
             resp = cache.lookup_key(self.key)
             if resp is None or not resp.is_ok():
                 resp = self.fetch()
                 cache.cache(resp)
                 return resp
-            
+
             else:
                 return resp
-                
+
 
 class MorpheusResponse(object):
     """A wrapper for the result of submitting a MorpheusUrl, whether or not 
@@ -1048,12 +1143,12 @@ class MorpheusResponse(object):
         self.url = url
         self.text = text
         self.exn = exn
-        
-        
+
+
     def __str__(self):
         return 'morpheuslib2.MorpheusResponse from ' + str(self.url) + \
                (' (ok)' if self.is_ok() else ' (not ok)')
- 
+
     def is_ok(self):
         """Did the fetch succeed?
         Returns:
@@ -1117,31 +1212,31 @@ class Analysis:
         Methods in this class that modify the instance return self in those
         cases where chaining method calls would be natural. 
     Attributes:
-        
+
         elem: (Element) the <analysis> element
         word: (Word) the analysed word.
-        
+
     """
     # Core features are those not specific to a part of speech.
-    
+
     core_features = ['form', 'lemma', 'expandedForm', 'pos', 'lang','dialect',
-                    'feature']
+                     'feature']
     # Prolog features are a union set of inflectional features, along with the
     # part of speech.
-    
+
     prolog_features = ['pos','case', 'gender', 'number', 'person', 'mood', 
                        'tense', 'voice']
-    
+
     def __init__ (self, elem, word):
         """Initializes the analysis element and word.
-        
-        
+
+
 
         Args:
             elem: (Element):the <analysis> element 
             word (Word): the word analyzed.
         """
-        
+
         self.elem = elem
         self.word = word
 
@@ -1189,7 +1284,7 @@ class Analysis:
                 raise ValueError("No feature " + feature + " in " + self.raw_str())
             else:
                 return e.text
-            
+
     def get_feature_nf(self, feature, if_not_found):
         """No fault version of get_feature(), which never raises an error. 
         Instead, if the feature is not found, the argument if_not_found is returned.
@@ -1205,10 +1300,10 @@ class Analysis:
             return self.get_feature(feature)
         except ValueError:
             return if_not_found
-        
+
     def fix_lemma(self):
         """Remove a numerical suffix from the lemma, if present.
-        
+
         Effect:    
             if the lemma has a suffix, the <lemma> element text is replaced and
             a new element lemma_sfx is added with the removed suffix. 
@@ -1219,7 +1314,7 @@ class Analysis:
         if len(sfx) == 0:
             pass
         else:
-            
+
             el = self.elem.find('lemma')
             el.text = lem
             el.set('sfx', sfx)
@@ -1254,8 +1349,8 @@ class Analysis:
             KeyError if lemma isn't in the prons dict.
         """ 
         if self.get_feature('pos') == 'pron' and \
-            self.get_feature('lang') == 'la':
-            
+           self.get_feature('lang') == 'la':
+
             person = Latin.person(self.get_feature('lemma'))
             el = ElementTree.Element('person')
             el.text = person
@@ -1266,10 +1361,10 @@ class Analysis:
 
     def fix_mood(self):
         """ Fix certain moods - remove them and change the part of speech.
-        
+
         This is useful if you are exporting to Prolog, so that all verb facts
         will be finite forms and have the same arity.
-  
+
         Returns:
             self.
         Effect:
@@ -1286,20 +1381,20 @@ class Analysis:
             else: 
                 pass
         return self
-    
+
     def is_capitalized(self):
         """Test for capitalization.
         This is done on the lemma, since the form is invariably all lower case, 
         whereas the lemma is variably cased.
-        
+
         Returns:
             bool.
         """
         c = self.get_feature('lemma')[0]
-        
+
         return unicodedata.category(c) == 'Lu'
-        
-        
+
+
     def fix_form(self):
         """If the analyzed word was capitalized, restore the capitalization to 
         the form.
@@ -1308,16 +1403,16 @@ class Analysis:
         Effect:
             possbly modifies the form element.
         """
-            
+
         if self.is_capitalized():
             self.set_feature('form', self.get_feature('form').title())
-        
-                
-            
+
+
+
     def lemma_with_sfx(self):
         s = self.get_feature('lemma_sfx')
         return self.get_feature('lemma') + ('' if s is None else s)
-    
+
     def set_feature(self, feature, text):
         """ Set the feature's value to text.
         Returns:
@@ -1342,7 +1437,7 @@ class Analysis:
 
     def fix(self, *fixes):
         """Apply a list of fixes to this analysis.
-        
+
         Note that the lemma fix should be first, as the pronoun fix depends
         on it.
 
@@ -1356,21 +1451,21 @@ class Analysis:
         """
         for fix in fixes:
             getattr(self, 'fix_' + fix)()
-            
+
     def inflectional_features(self):
         """Infections of the analysed word.  
         Returns:
             names of those features specific to the part of speech (list of str).
         """
         return sorted([x.tag for x in self.elem if x.tag not in Analysis.core_features])
-    
+
     def inflections(self):
         """Values for the analysis's inflectional features.
         Returns:
             list of str.
         """
         return [self.get_feature(feature) for feature in self.inflectional_features()]
-    
+
     def xml(self, encoding = 'utf-8'):
         """The XML text for this analysis. Not identical to the original, if
         fixes were applied.
@@ -1380,7 +1475,7 @@ class Analysis:
             bytes.
         """
         return ElementTree.tostring(self.elem, encoding , method= "xml")
-    
+
     def separated_values(self, *features, if_not_found = '', separator = ',', delimiter = ''):
         """The selected features as a list of separated values (like csv).
         Args:
@@ -1394,10 +1489,10 @@ class Analysis:
             str.
         """
         l = [self.get_feature_nf(feature, if_not_found) for feature in features]
-        
+
         return separator.join(['{0}{1}{2}'.format(delimiter, s, delimiter)
                                for s in l])
-    
+
     def raw_str(self):
         """A string of feature:value pairs directly from the xml document.
         Returns:
@@ -1415,7 +1510,7 @@ class Analysis:
             list of str.
         """
         return sorted([t.tag for t in self.elem])
- 
+
     def is_matched(self):
         """Does the form of the analysis match the word submitted?
 
@@ -1435,24 +1530,24 @@ class Analysis:
                 f = BetaCode.to_unigreek(self.word.word)
             else:
                 f = self.word.word        
-        
+
         if unicodedata.category(f[0]) \
-        != unicodedata.category(self.get_feature('lemma')[0]):
+           != unicodedata.category(self.get_feature('lemma')[0]):
             return False
-        
+
         if self.word.lang == 'greek':
-            
+
             fg = UniGreek.fix_grave
             f2a = UniGreek.fix_2nd_acute    
             f = f2a(fg(f))            
         else:
-        
+
             pass
-            
+
         return f == self.get_feature('form')   
-    
-    
-              
+
+
+
     def form_term(self):
         """A Prolog atom reating the form and lemma using the form_of/2 predicate.
         Args:
@@ -1467,8 +1562,8 @@ class Analysis:
             LangError.
         """
         return 'form(' + ','.join([prologize(self.get_feature_nf('form', None)), 
-                         prologize(self.get_feature_nf('lemma', None))]) + ')'
-    
+                                   prologize(self.get_feature_nf('lemma', None))]) + ')'
+
     def inflection_term(self):
         x = [prologize(self.get_feature_nf(feature, None)) for feature in self.inflectional_features()]
         p = self.get_feature('pos')
@@ -1476,32 +1571,32 @@ class Analysis:
             return p
         else:
             return p + '(' + ','.join(x) + ')'
-    
+
     def prolog(self):
         """A Prolog term consisting for this analysis.
         Returns:
             str.
         """
-        
+
         return 'analysis(' + ','.join([self.word.prolog()] + [self.form_term()] + [self.inflection_term()]) + ')' 
-                                       
+
     def json(self, *features):
         """This analysis as a JSON string.
         Arg:
             *features: features of the analysis to export (str).
         Returns:
             str.
-            
+
         Note: it is convenient to call this method with:
-        
+
         json(*morpheuslib2.Analysis.prolog_features)
-        
+
         This gives a constant-width record of morphological features. Features
         that are not found on an analysis generate JSON null values.
         """
         l = [(feature, self.get_feature_nf(feature, None)) for feature in list(features)]
         return json.dumps(dict(l), ensure_ascii = False)
-    
+
 class AnalysisList:
     """ Provides multiple-pass processing of analyses.
     Attributes:
@@ -1509,7 +1604,7 @@ class AnalysisList:
         root: root of the <analyses> document
         text: raw document text (bytes)
         l: the list of Analysis objects
-  
+
     """
     def __init__(self, text, word, list = None):
         """The optional argument list allows instance creation from an existing
@@ -1537,13 +1632,13 @@ class AnalysisList:
 
     def __getitem__(self, i):
         return self.l[i]
-    
+
     def __iter__(self):
         return self.l.__iter__()
 
     def __len__(self):
         return len(self.l)    
- 
+
     def select(self, i):
         """Select an analysis from those returned.
         Arg:
@@ -1557,7 +1652,7 @@ class AnalysisList:
 
     def filter(self, terms):
         """Filter the analyses successively by the argument terms.
-        
+
         Arg:
             terms is a list of triples each of which is specified as follows:
             term[0] is a feature name (str);
@@ -1567,39 +1662,42 @@ class AnalysisList:
             is not in (list).
             term[1] is any value supporting == and !=, though for the present 
             purposes only str and int make sense.
-        
+
             When using filter(), note that it is sensitive to features and their 
             order. For example, if filtering on a case, filter on a part of speech
             that has case first, then on the case. E.g. pos='noun', case='acc'.
             Otherwise, if a verb is among the analyses, trying to filter it on case
             will cause a ValueError to be raised from get_feature().  
-        
-            
+
+
         Returns:
             list of Analysis objects.
         Raises:
-            ValueError if an invalid feature is requested.
+            ValueError if an invalid feature is requested or invalid comparer 
+            used.
         """
         l = self.l
         for (k, comp, v) in terms:
             if len(l) == 0:
                 return l            
-            
+
             if comp == '!=':
                 l = [a for a in l if a.get_feature(k) != v]
             elif comp == 'in':
                 l = [a for a in l if a.get_feature(k) in v]
             elif comp == '!in':
                 l = [a for a in l if a.get_feature(k) not in v]
-            else:
+            elif comp == '=':
                 l = [a for a in l if a.get_feature(k) == v]
-            
+            else:
+                raise ValueError("Invalid comparer " + comp)
+
         return l
 
     def retain(self, terms):
         """Retain only analyses that satisfy terms. See method filter() for
         details about terms.
-        
+
         Essentially a mutating verson of filter().
         Arg:
             terms: a list of triples by which to filter.
@@ -1613,7 +1711,7 @@ class AnalysisList:
         """
         self.l = self.filter(terms)
         return self
-    
+
 
     def dedupe(self):
         """Remove duplicates Analyses from this instance.
@@ -1625,7 +1723,7 @@ class AnalysisList:
         """   
         self.l =  list(set(self))
         return self
-    
+
     def deduped(self):
         """Return a new AnalysisList deduped.
 
@@ -1657,12 +1755,12 @@ class AnalysisList:
         """
         self.l = [a for a in self if a.is_matched()]
         return self
-      
+
     def fix(self, *fixes):
         for a in self:
             a.fix(*fixes)
         return self
-    
+
     def get_feature(self, feature):
         """The argument feature for each analysis in this list.
         Arg:
@@ -1670,10 +1768,10 @@ class AnalysisList:
         Returns:
             list of str.
         Raises:
-            
+
         """
         return [a.get_feature(feature) for a in self]
-    
+
 class Cache:
     """A simple cache for MorpheusResponses. 
 
@@ -1691,7 +1789,7 @@ class Cache:
     """
 
     CommitReport = collections.namedtuple('CommitReport', ['will_be_deleted', 
-        'will_be_replaced', 'will_be_added'])
+                                                           'will_be_replaced', 'will_be_added'])
 
     def __init__(self, file):
         """
@@ -1742,11 +1840,11 @@ class Cache:
             or replacing an exising one under the key; changes the status
             message to 'cache-changed'.
         """
-       
-        
+
+
         self.pers[resp.key()] = resp
         self.status = 'cache_changed'
- 
+
     def lookup_word(self, word):
         """ Lookup a word in the cache.
         Args:
@@ -1773,7 +1871,7 @@ class Cache:
             raise LangError("Invalid greek_mode " + str(greek_mode))
         else:
             return self.pers.get((url_form(word, lang, greek_mode)))
-                                 
+
     def lookup_key(self, key):
         """Look up the key which is a pair consisting of the url form of the word
         and the language of the word.
@@ -1781,13 +1879,13 @@ class Cache:
             (str, str).
         Returns:
             a MorpheusResponse, or None if the key is not found.
-            
+
         """
         try:
             return self.pers[key]
         except KeyError:
             return None
-        
+
     def commit(self):
         """ Commit the cache's current (memory) state.
         Effect:
@@ -1797,16 +1895,16 @@ class Cache:
         Raises:
             OS, IO or Pickle error.
         """
-        
+
         t = datetime.datetime.now()
         g = open(self.file, "bw")
         pickle.dump((t, self.pers), g)
         g.close()
-        
-    
+
+
         self.last_save = t
         return self
-        
+
     def cached_words(self, lang = None):
         """ The list words currently stored in this instance.
         Args:
@@ -1833,7 +1931,7 @@ class Cache:
         Effect:
             clears the instance's dict; sets status to 'cache_changed'.
             No effect on disk cache until save() is called.
-        
+
         """
         self.pers.clear()
         self.status = 'cache_cleared'
@@ -1857,11 +1955,11 @@ class Cache:
             writes a (datetime, empty dict) pair to the cache file. No effect on
             data in memory.
         """
-        
+
         g = open(self.file, "bw")
         pickle.dump((datetime.datetime.now(), {}), g)
         g.close()
-        
+
 
     def commit_report(self):
         """A report on how a call to commit() will change the cache disk file.
@@ -1877,18 +1975,18 @@ class Cache:
             PickleError
             potentially others. See  Python Library doc sec 12.1.3
         """
-        
-        
+
+
         f = open(self.file, 'rb')
-        
+
         _, dict = pickle.load(f)
-            
+
         fkeys = dict.keys()
         mkeys = self.pers.keys()
         f.close()
         return Cache.CommitReport([k for k in fkeys if k not  in mkeys], 
-               [k for k in mkeys if k in fkeys],
-               [k for k in mkeys if not k in fkeys])
+                                  [k for k in mkeys if k in fkeys],
+                                  [k for k in mkeys if not k in fkeys])
 
     def not_ok(self, lang = None):
         """A list of responses in the cash that are lacking the <analyses> 
@@ -1904,7 +2002,7 @@ class Cache:
             return [(k, resp) for (k, resp) in self.pers.items() if not resp.is_ok()]
         else:
             return[((w, l), resp) for ((w, l), resp)in self.pers.items() if (not resp.is_ok()) and (l == lang)]
-        
+
     def filter(self, filter):
         """A list of MorpheusResponses satisfying filter criteria.
         Arg:
@@ -1916,7 +2014,7 @@ class Cache:
             AttributeError if the filter calls an a non-existent method.
         """ 
         return [resp for resp in self.pers.values() if filter(resp)]    
-        
+
     @classmethod
     def default(cls):
         """Create a cache with file named morpheuslib2.cache in the current
@@ -1933,15 +2031,15 @@ class Cache:
         if filter is None:
             return [(w, l, pickle.dumps(resp)) for ((w, l), resp) in self.pers.items()]
         else:
-            
+
             return [(w, l, pickle.dumps(resp)) for ((w, l), resp) in self.pers.items() if filter(w, l, resp)]
 
 
-            
+
 
 class DbCache(object):
     """A cache implemented in the Sqlite database.
-    
+
     The database has one table whose primary key is the (word, lang) pair used
     in the file system cache dictionary. The MorpheusResponse is pickled and placed
     in an Sqlite BLOB column.
@@ -1961,7 +2059,7 @@ class DbCache(object):
             self.cnx.execute("select * from cache")
         except sqlite3.OperationalError:
             self.cnx.execute("create table cache(word TEXT, lang TEXT, resp BLOB, primary key(word, lang))")  
-        
+
     def insert(self, resp):
         """Insert the argument into the cache table.
         Arg:
@@ -1972,7 +2070,7 @@ class DbCache(object):
         Returns:
             self.
         """
-        
+
         w, l = resp.word().key_pair()
         self.cnx.execute('insert into cache values (?,?,?)', (w, l, pickle.dumps(resp)))
         self.cnx.commit()
@@ -1994,7 +2092,7 @@ class DbCache(object):
             self.update(resp)
         except Exception as exn:
             raise exn
-    
+
     def close(self):
         """Close this instance's connection.
         Effect:
@@ -2014,7 +2112,7 @@ class DbCache(object):
         else:
             (n,) = self.cnx.execute("select count(*) from cache where lang = ?", (lang,)).fetchone()
         return n
- 
+
     def lookup_word(self, word):
         """Lookup the word in this cache.
         Arg:
@@ -2051,13 +2149,13 @@ class DbCache(object):
         self.cnx.execute("update cache set resp = ? where word = ? and lang = l", (pickle.dumps(resp), w, l))
         self.cnx.commit()
         return self
-    
+
     def commit(self):
         pass
-    
+
     def commit_report(self):
         return Cache.CommitReport(0, 0, 0)
-    
+
     def import_cache(self, cache, filter = None):
         """Import responses from a cache into this database.
         Args:
@@ -2073,4 +2171,56 @@ class DbCache(object):
     @classmethod
     def default(cls):
         return cls('morpheuslib2.dbcache')
+
+class CasesDb(object):
+    def __init__(self, file):
+        """Creates the cases table in the database at file, if it doesn't exist.
+        Arg:
+           file name (for relative location) or path + file name (for absolute
+                location.
+        Effect:
+            creates an open connection to the cases database.
+        """
+        self.cnx = sqlite3.connect(file)
+        try:
+            self.cnx.execute("select * from cases")
+        except sqlite3.OperationalError:
+            self.cnx.execute("create table cases(lemma TEXT, lang TEXT, "
+                             "pos TEXT, gcase TEXT, primary key(lemma, lang, pos, gcase))")
+
+    def insert(self, analysis, case):
+        q = (analysis.get_feature('lemma'), analysis.get_feature('lang'), 
+             analysis.get_feature('pos'), case)
+        self.cnx.execute('insert into cases values (?,?,?,?)', q)
+        self.cnx.commit()
+        return self    
+
+    def insert_all(self, analysis, cases):
+        for case in cases:
+            self.insert(analysis, case)
+        return self
+
+    def gcases(self, analysis):
+        t = (analysis.get_feature('lemma'), analysis.get_feature('lang'), 
+             analysis.get_feature('pos'))
+
+        r = self.cnx.execute("select gcase from cases where lemma = ? and lang = ? and pos = ?", t).fetchall()
+
+        return [c for (c,) in r]
+    
+    def gcases_x(self, lemma, lang, pos):
+        r = self.cnx.execute("select gcase from cases where lemma = ? and lang = ? and pos = ?", 
+                                (lemma, lang, pos)).fetchall()
+        return [c for (c,) in r]
+    
+    def zap(self):
+        self.cnx.execute('delete from cases')
+
+    def drop(self):
+        self.cnx.execute("drop cases")
+
+    @classmethod
+    def default(cls):
+        return cls('morpheuslib2.casesdb')    
+
 
